@@ -1,3 +1,9 @@
 ﻿  MDFMdll.c
-    正在创建库 C:\Users\xwyxwyx\Desktop\MDFMdll\x64\Debug\MDFMdll.lib 和对象 C:\Users\xwyxwyx\Desktop\MDFMdll\x64\Debug\MDFMdll.exp
-  MDFMdll.vcxproj -> C:\Users\xwyxwyx\Desktop\MDFMdll\x64\Debug\MDFMdll.dll
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(9,75): warning C4047: “函数”:“DWORD”与“void *”的间接级别不同
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(9,71): warning C4024: “FilterConnectCommunicationPort”: 形参和实参 2 的类型不同
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(9,87): warning C4047: “函数”:“WORD”与“void *”的间接级别不同
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(9,83): warning C4024: “FilterConnectCommunicationPort”: 形参和实参 4 的类型不同
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(26,87): warning C4047: “函数”:“DWORD”与“void *”的间接级别不同
+C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\MDFMdll\MDFMdll.c(26,83): warning C4024: “FilterSendMessage”: 形参和实参 5 的类型不同
+    正在创建库 C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\x64\Debug\MDFMdll.lib 和对象 C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\x64\Debug\MDFMdll.exp
+  MDFMdll.vcxproj -> C:\Users\xwyxwyx\Desktop\MDFM\MDFMdll\x64\Debug\MDFMdll.dll

@@ -1,18 +1,22 @@
-#include <Windows.h>
-#include <stdio.h>
-#include <fltUser.h>
+#ifndef _MINIFILTER_H_
+#define _MINIFILTER_H_
 
-#pragma comment(lib, "user32.lib")
-#pragma comment(lib, "kernel32.lib")
+#include <windows.h>
+#include <stdio.h>
+#include <FltUser.h>
 #pragma comment(lib, "fltLib.lib")
 
 extern HANDLE g_hPort;
+#define MINISPY_PORT_NAME                                L"\\MDFMComPort"  //通信端口名字
 
-#define MDFM_NAME            L"MDFM"
-#define MDFM_PORT_NAME       L"\\MDFMPort"
+#ifdef  MINI_EXPORTS
+#define MINI_API _declspec(dllexport)
+#else
+#define MINI_API _declspec(dllexport)
+#endif // NPMINI_EXPORTS
 
-__declspec(dllexport)	int InitialCommunicationPort(void);
-__declspec(dllexport)   int MdfmSendMessage(PVOID InputBuffer);
+MINI_API int  InitialCommuicationPort(void);
+MINI_API int  MdfmSendMessage(PVOID InputBuffer);
 
 typedef enum _MDFM_ACCESS {
     MDFM_COMMAND_BLOCK = 0,
@@ -25,3 +29,4 @@ typedef struct _MDFM_MESSAGE {
     UCHAR           Hash[32];
     MDFM_ACCESS 	AccessPrivilege;
 } MDFM_MESSAGE, * PMDFM_MESSAGE;
+#endif

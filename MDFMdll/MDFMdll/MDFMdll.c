@@ -1,64 +1,33 @@
+#include <stdio.h>
 #include "MDFMdll.h"
 
+//初始化句柄
 HANDLE g_hPort = INVALID_HANDLE_VALUE;
 
-#ifdef _MANAGED
-#pragma managed(push, off)
-#endif
-
-BOOL APIENTRY DllMain(HMODULE hModule,
-	DWORD  ul_reason_for_call,
-	LPVOID lpReserved
-)
+int InitialCommuicationPort(void)
 {
-	switch (ul_reason_for_call)
-	{
-	case DLL_PROCESS_ATTACH:
-		InitialCommunicationPort();
-	case DLL_THREAD_ATTACH:
-	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
-		break;
-	}
-	return TRUE;
+    DWORD hResult = FilterConnectCommunicationPort(MINISPY_PORT_NAME, NULL, NULL, NULL, NULL, &g_hPort);
+    printf("进入了通信端口初始化\n");
+    if (hResult != S_OK)
+    {  
+        printf("通信端口初始化不成功\n");
+        return hResult;
+    }
+    printf("通信端口初始化成功\n");
+    return 0 ;
 }
 
-#ifdef _MANAGED
-#pragma managed(pop)
-#endif
-
-int InitialCommunicationPort(void)
+int  MdfmSendMessage(PVOID InputBuffer)
 {
-	DWORD hResult = FilterConnectCommunicationPort(
-		MDFM_PORT_NAME,
-		0,
-		NULL,
-		0,
-		NULL,
-		&g_hPort);
+    DWORD bytesReturned = 0;
+    DWORD hResult = 0;
 
-	if (hResult != S_OK) {
-		return hResult;
-	}
-	return 0;
-}
+    printf("进入发送消息\n");
+    hResult = FilterSendMessage(g_hPort, InputBuffer, sizeof(MDFM_MESSAGE), NULL, NULL, &bytesReturned);
+    if (hResult != S_OK)
+    {
+        return hResult;
+    }
 
-int MdfmSendMessage(PVOID InputBuffer)
-{
-	DWORD bytesReturned = 0;
-	DWORD hResult = 0;
-	PMDFM_MESSAGE commandMessage = (PMDFM_MESSAGE)InputBuffer;
-
-	hResult = FilterSendMessage(
-		g_hPort,
-		commandMessage,
-		sizeof(MDFM_MESSAGE),
-		NULL,
-		0,
-		&bytesReturned);
-
-	if (hResult != S_OK) {
-		return hResult;
-	}
-	return 0;
+    return 0 ;
 }
