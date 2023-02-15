@@ -36,7 +36,10 @@
     <ClCompile Include="Encrypt.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Util.c">
+    <ClCompile Include="File.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Flag.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -64,7 +67,10 @@
     <ClInclude Include="SwapBuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Util.h">
+    <ClInclude Include="File.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Flag.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

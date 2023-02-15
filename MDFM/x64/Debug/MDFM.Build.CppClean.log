@@ -2,8 +2,9 @@ c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\vc142.pdb
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.obj
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\swapbuffer.obj
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\process.obj
+c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\flag.obj
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\encrypt.obj
-c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\clearcache.obj
+c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\file.obj
 c:\users\xwyxwyx\desktop\mdfm\x64\debug\mdfm\mdfm.cat
 c:\users\xwyxwyx\desktop\mdfm\x64\debug\mdfm.sys
 c:\users\xwyxwyx\desktop\mdfm\x64\debug\mdfm.pdb
@@ -14,8 +15,8 @@ c:\users\xwyxwyx\desktop\mdfm\x64\debug\mdfm.inf
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\cl.command.1.tlog
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\cl.read.1.tlog
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\cl.write.1.tlog
-c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.7308.read.1.tlog
-c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.7308.write.1.tlog
+c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.18516.read.1.tlog
+c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.18516.write.1.tlog
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.read.1.tlog
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat-expand.write.1.tlog
 c:\users\xwyxwyx\desktop\mdfm\mdfm\x64\debug\mdfm.tlog\inf2cat.command.1.tlog

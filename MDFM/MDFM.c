@@ -4,12 +4,18 @@
 #include "Encrypt.h"
 #include "SwapBuffer.h"
 #include "Context.h"
-#include "Util.h"
+#include "File.h"
+#include "Flag.h"
 
 PFLT_FILTER gFilterHandle;                          // 保存过滤器的句柄
 NPAGED_LOOKASIDE_LIST Pre2PostContextList;          // 用于分配上下文的旁视列表
 ULONG_PTR OperationStatusCtx = 1;
 ULONG gTraceFlags = 0;
+UCHAR gFileFlagHeader[FILE_GUID_LENGTH] = {
+    0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,
+    0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77
+};
+
 
 
 //
@@ -40,7 +46,7 @@ CONST FLT_CONTEXT_REGISTRATION ContextNotifications[] = {
      { FLT_CONTEXT_END }
 };
 
-CONST FLT_OPERATION_REGISTRATION Callbacks[4] = {
+CONST FLT_OPERATION_REGISTRATION Callbacks[5] = {
 
 #if 0 // TODO - List all of the requests to filter.
     { IRP_MJ_CREATE,
@@ -239,10 +245,10 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[4] = {
       MDFMPostOperation },
 
 #endif // TODO
-    //{ IRP_MJ_CREATE,
-    //  0,
-    //  MDFMPreCreate,
-    //  MDFMPostCreate },
+    { IRP_MJ_CREATE,
+      0,
+      MDFMPreCreate,
+      MDFMPostCreate },
     
     { IRP_MJ_READ,
       0,
@@ -356,20 +362,32 @@ MDFMInstanceSetup (
 
             leave;
         }
+        
+        
+        //
+        //  在上下文中报错卷名，后续将用来获取卷的示例
+        //
+
+        ctx->Name.Buffer = ExAllocatePoolWithTag(NonPagedPool, 0x30, NAME_TAG);
+        ctx->Name.MaximumLength = 0x30;
+        RtlCopyUnicodeString(&ctx->Name, &volProp->RealDeviceName);
+        
+
 
         //
-        //  在上下文中保存扇区大小以供以后使用。注意，如果没有指定扇区大小，我们将选择最小扇区大小。
+        //  在上下文中保存扇区大小以供以后使用。
         //
 
-        FLT_ASSERT((volProp->SectorSize == 0) || (volProp->SectorSize >= MIN_SECTOR_SIZE));
+        //FLT_ASSERT((volProp->SectorSize == 0) || (volProp->SectorSize >= MIN_SECTOR_SIZE));
 
-        ctx->SectorSize = max(volProp->SectorSize, MIN_SECTOR_SIZE);
+        ctx->SectorSize =volProp->SectorSize;
+
 
         //
         //  初始化缓冲区字段(稍后可能会分配)。
         //
 
-        ctx->Name.Buffer = NULL;
+        ctx->DosName.Buffer = NULL;
 
         //
         //  获取需要命名的存储设备对象。
@@ -383,7 +401,7 @@ MDFMInstanceSetup (
             //  尝试获取DOS名称。如果成功，我们将有一个分配的名称缓冲区。如果不是，它将是NULL
             //
 
-            status = IoVolumeDeviceToDosName(devObj, &ctx->Name);
+            status = IoVolumeDeviceToDosName(devObj, &ctx->DosName);
         }
 
         //
@@ -392,7 +410,7 @@ MDFMInstanceSetup (
 
         if (!NT_SUCCESS(status)) {
 
-            FLT_ASSERT(ctx->Name.Buffer == NULL);
+            FLT_ASSERT(ctx->DosName.Buffer == NULL);
 
             //
             //  从属性中找出要使用的名称
@@ -430,11 +448,11 @@ MDFMInstanceSetup (
 
 #pragma prefast(suppress:__WARNING_MEMORY_LEAK, "ctx->Name.Buffer will not be leaked because it is freed in CleanupVolumeContext")
 
-            ctx->Name.Buffer = ExAllocatePoolWithTag(NonPagedPool,
+            ctx->DosName.Buffer = ExAllocatePoolWithTag(NonPagedPool,
                 size,
                 NAME_TAG);
 
-            if (ctx->Name.Buffer == NULL) {
+            if (ctx->DosName.Buffer == NULL) {
 
                 status = STATUS_INSUFFICIENT_RESOURCES;
 
@@ -447,22 +465,22 @@ MDFMInstanceSetup (
             //  初始化其余的字段
             //
 
-            ctx->Name.Length = 0;
-            ctx->Name.MaximumLength = size;
+            ctx->DosName.Length = 0;
+            ctx->DosName.MaximumLength = size;
 
             //
             //  复制名称
             //
 
-            RtlCopyUnicodeString(&ctx->Name,
+            RtlCopyUnicodeString(&ctx->DosName,
                 workingName);
 
             //
             //  在后面加一个冒号可以使显示效果更好
             //
 
-            RtlAppendUnicodeToString(&ctx->Name,
-                L":");
+            //RtlAppendUnicodeToString(&ctx->Name,
+            //    L":");
         }
 
         //
@@ -633,9 +651,11 @@ ContextCleanUp(
         {
             PVOLUME_CONTEXT ctx = context;
 
-            if (ctx->Name.Buffer != NULL) {
+            if (ctx->DosName.Buffer != NULL) {
 
+                ExFreePool(ctx->DosName.Buffer);
                 ExFreePool(ctx->Name.Buffer);
+                ctx->DosName.Buffer = NULL;
                 ctx->Name.Buffer = NULL;
 
             }
@@ -785,25 +805,21 @@ MDFMPreCreate (
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( CompletionContext );
 
-    //测试：识别机密进程
+    //check
 
-    //获取当前进程名
-    PCHAR NAME = NULL;
-    MdfmCurProcName(Data, &NAME);
+    if (!MdfmCheckCurProcprivilege(Data)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
 
-    //窄字符转宽字符
-    STRING str = { 0 };
-    UNICODE_STRING proc_name = { 0 };
+    UNICODE_STRING TXT = { 0 };
 
-    RtlInitString(&str, NAME);
-    RtlAnsiStringToUnicodeString(&proc_name, &str, TRUE);  
-    
+    RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
 
-    if (MdfmIsEncryptionProcess(&proc_name)) {
-       
+    if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
     
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
 FLT_POSTOP_CALLBACK_STATUS
@@ -814,12 +830,58 @@ MDFMPostCreate(
     _In_ FLT_POST_OPERATION_FLAGS Flags
 )
 {
-    UNREFERENCED_PARAMETER(Data);
-    UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
     UNREFERENCED_PARAMETER(Flags);
 
     DbgPrint("MDFMPostCreate: Entered\n");
+
+    NTSTATUS status = STATUS_SUCCESS;
+    
+    PVOLUME_CONTEXT volCtx = NULL;
+    PFLT_INSTANCE Instance = NULL;
+    ULONG fileSize;
+
+
+    try {
+
+        /*
+        *   获取文件大小
+        */
+
+        Instance = FltObjects->Instance;
+
+        fileSize = MdfmGetFileSize(Instance, FltObjects->FileObject);
+
+        DbgPrint("FileSize is %ld\n", fileSize);
+
+        PFILE_FLAG pFlag = ExAllocatePoolWithTag( NonPagedPool, FLAG_SIZE, FLAG_TAG);
+        RtlZeroMemory(pFlag, FLAG_SIZE);
+        memcpy(pFlag->FileFlagHeader, &gFileFlagHeader, 16);
+        for (UCHAR i = 0; i < (UCHAR)128; i++) {
+            pFlag->FileKey[i] = i;
+        }
+        pFlag->FileValidLength = fileSize;
+
+
+        MdfmWriteFileFlag(&Data, FltObjects, pFlag);
+
+        MdfmReadFileFlag(FltObjects, pFlag);
+        if (pFlag != NULL && strncmp(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH) == 0) {
+            DbgPrint("ValidLength: %ld\n", pFlag->FileValidLength);
+        }
+
+        ExFreePool(pFlag);
+
+        fileSize = MdfmGetFileSize(Instance, FltObjects->FileObject);
+
+        DbgPrint("FileSize is %ld\n", fileSize);
+
+
+    }
+    finally {
+        
+    } 
+
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
@@ -832,6 +894,7 @@ MDFMPreRead(
     _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
 )
 {
+
     //check
 
     if (!MdfmCheckCurProcprivilege(Data)) {
@@ -853,6 +916,14 @@ MDFMPreRead(
     }
 
     DbgPrint("MDFMPreRead: Entered\n");
+
+    // Get Flag
+
+    PFILE_FLAG pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
+
+    MdfmReadFileFlag(FltObjects, pFlag);
+
+    // PreRead
 
     PreReadSwapBuffers(&Data, FltObjects, CompletionContext);
 
@@ -878,7 +949,7 @@ MDFMPostRead(
 
     DbgPrint("MDFMPostRead: Entered\n");
 
-    PostReadSwapBuffers(&Data, FltObjects, CompletionContext, Flags);
+    PostReadSwapBuffers(&Data, FltObjects, CompletionContext,Flags);
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
@@ -893,6 +964,7 @@ MDFMPreWrite(
 ) 
 {
     //check
+
 
     if (!MdfmCheckCurProcprivilege(Data)) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;

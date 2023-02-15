@@ -35,8 +35,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Util.c" />
+    <ClCompile Include="File.c" />
     <ClCompile Include="Encrypt.c" />
+    <ClCompile Include="Flag.c" />
     <ClCompile Include="Process.c" />
     <ClCompile Include="SwapBuffer.c" />
     <ResourceCompile Include="MDFM.rc" />
@@ -189,9 +190,10 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Util.h" />
+    <ClInclude Include="File.h" />
     <ClInclude Include="Context.h" />
     <ClInclude Include="Encrypt.h" />
+    <ClInclude Include="Flag.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="MDFM.h" />
     <ClInclude Include="Process.h" />

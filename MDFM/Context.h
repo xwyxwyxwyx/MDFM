@@ -15,8 +15,11 @@
 // 绑定给卷的上下文
 typedef struct VOLUME_CONTEXT {
 
-	// 卷名称
+	// 卷名
 	UNICODE_STRING Name;
+
+	// DOS名称
+	UNICODE_STRING DosName;
 
 	// 扇区大小
 	ULONG SectorSize;

@@ -1,6 +1,7 @@
 #include "global.h"
 #include "Context.h"
 #include "Encrypt.h"
+#include "Flag.h"
 
 extern NPAGED_LOOKASIDE_LIST Pre2PostContextList;          // 用于分配上下文的旁视列表
 
@@ -189,7 +190,7 @@ PreWriteSwapBuffers(
         //  替换缓冲区之前，数据加密
         //
 
-        MdfmAesEncrypt(newBuf, &writeLen);
+        MdfmAesEncrypt(newBuf, writeLen);
 
         //
         //  设置新的缓冲区
@@ -197,6 +198,7 @@ PreWriteSwapBuffers(
 
         iopb->Parameters.Write.WriteBuffer = newBuf;
         iopb->Parameters.Write.MdlAddress = newMdl;
+        iopb->Parameters.Write.ByteOffset.QuadPart += ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
         FltSetCallbackDataDirty((*Data));
 
         //
@@ -288,10 +290,13 @@ PreReadSwapBuffers(
     FLT_PREOP_CALLBACK_STATUS retValue = FLT_PREOP_SUCCESS_NO_CALLBACK;
     PVOID newBuf = NULL;
     PMDL newMdl = NULL;
-    PVOLUME_CONTEXT volCtx = NULL;
     PPRE_2_POST_CONTEXT p2pCtx;
     NTSTATUS status;
+
     ULONG readLen = iopb->Parameters.Read.Length;
+
+    PVOLUME_CONTEXT volCtx = NULL;
+     
 
     try {
 
@@ -305,19 +310,19 @@ PreReadSwapBuffers(
         }
 
         //
-        //  获取我们的卷上下文，以便我们可以在调试输出。
+        // 获取卷上下文，我们将会用到里面保存的扇区大小
         //
 
-        status = FltGetVolumeContext(FltObjects->Filter,
-            FltObjects->Volume,
-            &volCtx);
+        status = FltGetVolumeContext(FltObjects->Filter, FltObjects->Volume, &volCtx);
+        
 
         if (!NT_SUCCESS(status)) {
 
-            DbgPrint("PreReadSwapBuffers: Get volume context failed\n");
-
+            DbgPrint("[MdfmReadFileFlag]->FltGetVolumeFromInstance failed. Status = %x\n", status);
             leave;
         }
+        
+
 
         //
         //  如果这是一个非缓存的I/O，我们需要将长度四舍五入到这个设备的
@@ -402,6 +407,7 @@ PreReadSwapBuffers(
 
         iopb->Parameters.Read.ReadBuffer = newBuf;
         iopb->Parameters.Read.MdlAddress = newMdl;
+        iopb->Parameters.Read.ByteOffset.QuadPart += ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
         FltSetCallbackDataDirty((*Data));
 
         //
@@ -439,11 +445,6 @@ PreReadSwapBuffers(
 
                 IoFreeMdl(newMdl);
             }
-
-            if (volCtx != NULL) {
-
-                FltReleaseContext(volCtx);
-            }
         }
     }
 
@@ -459,11 +460,16 @@ PostReadSwapBuffers(
     IN FLT_POST_OPERATION_FLAGS Flags
 )
 {
+    NTSTATUS status = STATUS_SUCCESS;
+
     PVOID origBuf;
     PFLT_IO_PARAMETER_BLOCK iopb = (*Data)->Iopb;
     FLT_POSTOP_CALLBACK_STATUS retValue = FLT_POSTOP_FINISHED_PROCESSING;
-    PPRE_2_POST_CONTEXT p2pCtx = CompletionContext;
+    PPRE_2_POST_CONTEXT p2pCtx = (PPRE_2_POST_CONTEXT)CompletionContext;
     BOOLEAN cleanupAllocatedBuffer = TRUE;
+
+    PVOLUME_CONTEXT volCtx = NULL;
+
 
     //
     //  This system won't draining an operation with swapped buffers, verify
@@ -578,13 +584,13 @@ PostReadSwapBuffers(
 
             RtlCopyMemory(origBuf,
                 p2pCtx->SwappedBuffer,
-                (*Data)->IoStatus.Information);
+                iopb->Parameters.Read.Length);
 
             //
             //  替换缓冲区之后，数据解密
             //
             
-            MdfmAesDecrypt(origBuf, &iopb->Parameters.Read.Length);
+            MdfmAesDecrypt(origBuf, iopb->Parameters.Read.Length);
 
         } except(EXCEPTION_EXECUTE_HANDLER) {
 

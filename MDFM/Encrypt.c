@@ -1,7 +1,7 @@
 #include <fltKernel.h>
 #include <dontuse.h>
 
-BOOLEAN MdfmAesEncrypt(IN OUT PUCHAR Buffer, IN OUT ULONG* LengthReturned) {
+BOOLEAN MdfmAesEncrypt(IN OUT PUCHAR Buffer, IN OUT ULONG LengthReturned) {
 	if (NULL == Buffer)
 	{
 		DbgPrint("MdfmAesEncrypt->Buffer is NULL.\n");
