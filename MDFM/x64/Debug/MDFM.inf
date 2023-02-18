@@ -10,7 +10,7 @@ Signature   = "$Windows NT$"
 Class = "ActivityMonitor"
 ClassGuid = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
 Provider    = %ManufacturerName%
-DriverVer = 02/14/2023,18.2.20.552
+DriverVer = 02/18/2023,20.47.19.298
 CatalogFile = MDFM.cat
 PnpLockDown=1
 

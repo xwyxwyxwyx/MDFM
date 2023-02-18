@@ -1,7 +1,13 @@
 #include <fltKernel.h>
 #include <dontuse.h>
+#include "File.h"
 
-VOID MdfmFileCacheClear(IN PFILE_OBJECT pFileObject)
+
+VOID 
+MdfmFileCacheClear(
+    IN PFILE_OBJECT pFileObject
+)
+
 //清除缓存
 {
     PFSRTL_COMMON_FCB_HEADER pFcb;
@@ -124,7 +130,11 @@ VOID MdfmFileCacheClear(IN PFILE_OBJECT pFileObject)
     }
 }
 
-ULONG MdfmGetFileSize(IN PFLT_INSTANCE Instance, IN PFILE_OBJECT FileObject)
+ULONG 
+MdfmGetFileSize(
+    IN PFLT_INSTANCE Instance,
+    IN PFILE_OBJECT FileObject
+)
 // 非重入获取文件大小（向下查询的文件大小会包括文件标识的大小）
 {
 
@@ -136,77 +146,101 @@ ULONG MdfmGetFileSize(IN PFLT_INSTANCE Instance, IN PFILE_OBJECT FileObject)
     return (ULONG)StandardInfo.EndOfFile.QuadPart;
 }
 
-PFLT_INSTANCE MdfmGetVolumeInstance(IN PFLT_FILTER pFilter, IN PUNICODE_STRING pVolumeName)
-////获得文件所在盘的实例
+
+NTSTATUS
+MdfmFindOrCreateStreamContext(
+    IN PFLT_CALLBACK_DATA Data,
+    IN PFLT_RELATED_OBJECTS FltObjects,
+    IN BOOLEAN CreateIfNotFound,
+    IN OUT PSTREAM_CONTEXT* StreamContext,
+    IN OUT BOOLEAN* ContextCreated
+)
 {
-    NTSTATUS		status;
-    PFLT_INSTANCE	pInstance = NULL;
-    PFLT_VOLUME		pVolumeList[100];
-    ULONG			uRet;
-    UNICODE_STRING	uniName = { 0 };
-    ULONG 			index = 0;
-    WCHAR			wszNameBuffer[260] = { 0 };
+    NTSTATUS status;
+    PSTREAM_CONTEXT streamContext;
+    PSTREAM_CONTEXT oldStreamContext;
 
-    status = FltEnumerateVolumes(pFilter,
-        NULL,
-        0,
-        &uRet);
-    if (status != STATUS_BUFFER_TOO_SMALL)
+    PAGED_CODE();
+
+    *StreamContext = NULL;
+    if (ContextCreated != NULL) *ContextCreated = FALSE;
+
+    //  第一次获取文件流上下文
+    status = FltGetStreamContext(Data->Iopb->TargetInstance, Data->Iopb->TargetFileObject, &streamContext);
+    if (!NT_SUCCESS(status) &&
+        (status == STATUS_NOT_FOUND) &&
+        CreateIfNotFound)
     {
-        return NULL;
-    }
+        status = MdfmCreateStreamContext(FltObjects, &streamContext);
+        if (!NT_SUCCESS(status))
+            return status;
 
-    status = FltEnumerateVolumes(pFilter,
-        pVolumeList,
-        uRet,
-        &uRet);
-
-    if (!NT_SUCCESS(status))
-    {
-
-        return NULL;
-    }
-    uniName.Buffer = wszNameBuffer;
-
-    if (uniName.Buffer == NULL)
-    {
-        for (index = 0; index < uRet; index++)
-            FltObjectDereference(pVolumeList[index]);
-
-        return NULL;
-    }
-
-    uniName.MaximumLength = sizeof(wszNameBuffer);
-
-    for (index = 0; index < uRet; index++)
-    {
-        uniName.Length = 0;
-
-        status = FltGetVolumeName(pVolumeList[index],
-            &uniName,
-            NULL);
+        status = FltSetStreamContext(Data->Iopb->TargetInstance,
+            Data->Iopb->TargetFileObject,
+            FLT_SET_CONTEXT_KEEP_IF_EXISTS,
+            streamContext,
+            &oldStreamContext);
 
         if (!NT_SUCCESS(status))
-            continue;
-
-        if (RtlCompareUnicodeString(&uniName,
-            pVolumeName,
-            TRUE) != 0)
-            continue;
-
-        status = FltGetVolumeInstanceFromName(pFilter,
-            pVolumeList[index],
-            NULL,
-            &pInstance);
-
-        if (NT_SUCCESS(status))
         {
-            FltObjectDereference(pInstance);
-            break;
+            FltReleaseContext(streamContext);
+
+            if (status != STATUS_FLT_CONTEXT_ALREADY_DEFINED)
+            {
+                //  FltSetStreamContext failed for a reason other than the context already
+                //  existing on the stream. So the object now does not have any context set
+                //  on it. So we return failure to the caller.
+                return status;
+            }
+            streamContext = oldStreamContext;
+            status = STATUS_SUCCESS;
+        }
+        else
+        {
+            if (ContextCreated != NULL) *ContextCreated = TRUE;
         }
     }
+    *StreamContext = streamContext;
 
-    for (index = 0; index < uRet; index++)
-        FltObjectDereference(pVolumeList[index]);
-    return pInstance;
+    return status;
 }
+
+NTSTATUS
+MdfmCreateStreamContext(
+    IN PFLT_RELATED_OBJECTS FltObjects,
+    IN OUT PSTREAM_CONTEXT* StreamContext
+)
+{
+
+    NTSTATUS status;
+    PSTREAM_CONTEXT streamContext;
+
+    PAGED_CODE();
+
+
+    status = FltAllocateContext(FltObjects->Filter,
+        FLT_STREAM_CONTEXT,
+        sizeof(STREAM_CONTEXT),
+        NonPagedPool,
+        &streamContext);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    //  初始化新的上下文
+    RtlZeroMemory(streamContext, sizeof(STREAM_CONTEXT));
+
+    streamContext->Resource = ExAllocatePoolWithTag(NonPagedPool, sizeof(ERESOURCE), RESOURCE_TAG);
+    if (streamContext->Resource == NULL)
+    {
+        FltReleaseContext(streamContext);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    ExInitializeResourceLite(streamContext->Resource);
+
+    *StreamContext = streamContext;
+
+    return STATUS_SUCCESS;
+}
+

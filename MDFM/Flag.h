@@ -47,3 +47,9 @@ MdfmReadWriteCallbackRoutine(
 	IN PFLT_CALLBACK_DATA CallbackData,
 	IN PFLT_CONTEXT Context
 );
+
+NTSTATUS
+MdfmInitNewFlag(
+	IN PCFLT_RELATED_OBJECTS FltObjects,
+	IN OUT PFILE_FLAG pFlag
+);

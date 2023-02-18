@@ -55,7 +55,6 @@ NTSTATUS MdfmCurProcName(PFLT_CALLBACK_DATA Data, PCHAR* ProcessName)
     }
     ObDereferenceObject(processObj);				// 解除引用
     *ProcessName = PsGetProcessImageFileName(processObj);// 根据进程对象获取进程名
-    //DbgPrint("process:%s\n", *ProcessName);
 
     return STATUS_SUCCESS;
 }
@@ -72,7 +71,6 @@ BOOLEAN MdfmIsEncryptionProcess(PUNICODE_STRING proc_name)
         return FALSE;
     }
     if (IsListEmpty(&s_mdfm_eptProc_list)) {
-        DbgPrint("Empty\n");
         return FALSE;
     }
 
@@ -88,25 +86,12 @@ BOOLEAN MdfmIsEncryptionProcess(PUNICODE_STRING proc_name)
         }
     }
 
-    //UNICODE_STRING Notepad = { 0 };
-    //RtlInitUnicodeString(&Notepad, L"notepad.exe");
-    //if (RtlCompareUnicodeString(&Notepad, proc_name, TRUE) == 0) {
-    //    return TRUE;
-    //}
-
-
-
     return FALSE;
 }
 
 // 追加一个需要管控的机密进程
 BOOLEAN MdfmAppendEncryptionProcess(PUNICODE_STRING proc_name)
 {
-
-    //((PEPT_PROC)s_mdfm_eptProc_list.Flink)->encryptionProcess;
-    //((PEPT_PROC)s_mdfm_eptProc_list.Flink->Flink)->encryptionProcess;
-    //DbgBreakPoint();
-
     // 先分配空间
     PEPT_PROC node = (PEPT_PROC)ExAllocatePoolWithTag(NonPagedPool, sizeof(EPT_PROC), MDFM_MEM_NODE_TAG);
     if (node == NULL) {
@@ -190,7 +175,6 @@ BOOLEAN MdfmCheckCurProcprivilege(PFLT_CALLBACK_DATA Data) {
 
     RtlInitString(&str, NAME);
     RtlAnsiStringToUnicodeString(&proc_name, &str, TRUE);
-
 
     if (MdfmIsEncryptionProcess(&proc_name)) {
         return TRUE;

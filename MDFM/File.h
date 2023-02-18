@@ -1,9 +1,33 @@
 #pragma once
 #include "global.h"
+#include "Context.h"
 
-VOID MdfmFileCacheClear(IN PFILE_OBJECT pFileObject);
+#define RESOURCE_TAG 'rsTg'
 
-ULONG MdfmGetFileSize(IN PFLT_INSTANCE Instance, IN PFILE_OBJECT FileObject);
+VOID 
+MdfmFileCacheClear(
+    IN PFILE_OBJECT pFileObject
+);
 
-PFLT_INSTANCE MdfmGetVolumeInstance(IN PFLT_FILTER pFilter, IN PUNICODE_STRING pVolumeName);
+ULONG 
+MdfmGetFileSize(
+    IN PFLT_INSTANCE Instance, 
+    IN PFILE_OBJECT FileObject
+);
+
+NTSTATUS
+MdfmFindOrCreateStreamContext(
+    IN PFLT_CALLBACK_DATA Data,
+    IN PFLT_RELATED_OBJECTS FltObjects,
+    IN BOOLEAN CreateIfNotFound,
+    IN OUT PSTREAM_CONTEXT* StreamContext,
+    IN OUT BOOLEAN *ContextCreated
+);
+
+NTSTATUS
+MdfmCreateStreamContext(
+    IN PFLT_RELATED_OBJECTS FltObjects,
+    IN OUT PSTREAM_CONTEXT* StreamContext
+);
+
 

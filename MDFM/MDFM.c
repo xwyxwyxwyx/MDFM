@@ -1,4 +1,6 @@
 #pragma once
+#include <ntifs.h>
+#include <ntstrsafe.h>
 #include "MDFM.h"
 #include "Process.h"
 #include "Encrypt.h"
@@ -42,11 +44,17 @@ CONST FLT_CONTEXT_REGISTRATION ContextNotifications[] = {
        ContextCleanUp,
        sizeof(VOLUME_CONTEXT),
        CONTEXT_TAG },
+     
+    { FLT_STREAM_CONTEXT,
+       0,
+       ContextCleanUp,
+       sizeof(STREAM_CONTEXT),
+       CONTEXT_TAG },
 
      { FLT_CONTEXT_END }
 };
 
-CONST FLT_OPERATION_REGISTRATION Callbacks[5] = {
+CONST FLT_OPERATION_REGISTRATION Callbacks[8] = {
 
 #if 0 // TODO - List all of the requests to filter.
     { IRP_MJ_CREATE,
@@ -265,10 +273,20 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[5] = {
       MDFMPreCleanUp,
       MDFMPostCleanUp },
 
-    //{ IRP_MJ_CLOSE,
-    //  0,
-    //  MDFMPreClose,
-    //  MDFMPostClose },
+    { IRP_MJ_CLOSE,
+      0,
+      MDFMPreClose,
+      MDFMPostClose },
+
+    { IRP_MJ_QUERY_INFORMATION,
+      0,
+      MDFMPreQueryInformation,
+      MDFMPostQueryInformation },
+
+    { IRP_MJ_SET_INFORMATION,
+      0,
+      MDFMPreSetInformation,
+      MDFMPostSetInformation },
 
     { IRP_MJ_OPERATION_END }
 };
@@ -535,30 +553,6 @@ MDFMInstanceQueryTeardown (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
     )
-/*++
-
-Routine Description:
-
-    This is called when an instance is being manually deleted by a
-    call to FltDetachVolume or FilterDetach thereby giving us a
-    chance to fail that detach request.
-
-    If this routine is not defined in the registration structure, explicit
-    detach requests via FltDetachVolume or FilterDetach will always be
-    failed.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Indicating where this detach request came from.
-
-Return Value:
-
-    Returns the status of this operation.
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
@@ -576,24 +570,6 @@ MDFMInstanceTeardownStart (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
     )
-/*++
-
-Routine Description:
-
-    This routine is called at the start of instance teardown.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Reason why this instance is being deleted.
-
-Return Value:
-
-    None.
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
@@ -609,24 +585,6 @@ MDFMInstanceTeardownComplete (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
     )
-/*++
-
-Routine Description:
-
-    This routine is called at the end of instance teardown.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Reason why this instance is being deleted.
-
-Return Value:
-
-    None.
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
@@ -658,6 +616,17 @@ ContextCleanUp(
                 ctx->DosName.Buffer = NULL;
                 ctx->Name.Buffer = NULL;
 
+            }
+
+            break;
+        }
+        case FLT_STREAM_CONTEXT:
+        {
+            PSTREAM_CONTEXT ctx = context;
+
+            if (ctx->FileName.Buffer != NULL) {
+                ExFreePool(ctx->FileName.Buffer);
+                ctx->FileName.Buffer = NULL;
             }
 
             break;
@@ -733,9 +702,9 @@ DriverEntry (
         RtlInitUnicodeString(&ProcName, L"notepad.exe");
         MdfmAppendEncryptionProcess(&ProcName);
         
-        /*UNICODE_STRING ProcName1 = { 0 };
-        RtlInitUnicodeString(&ProcName1, L"notepad.exe");*/
-        //MdfmAppendEncryptionProcess(&ProcName);
+ /*       UNICODE_STRING ProcName1 = { 0 };
+        RtlInitUnicodeString(&ProcName1, L"explorer.exe");
+        MdfmAppendEncryptionProcess(&ProcName1);*/
 
 
         //MdfmRemoveEncryptionProcess(&ProcName);
@@ -807,9 +776,9 @@ MDFMPreCreate (
 
     //check
 
-    if (!MdfmCheckCurProcprivilege(Data)) {
-        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-    }
+    //if (!MdfmCheckCurProcprivilege(Data)) {
+    //    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    //}
 
     UNICODE_STRING TXT = { 0 };
 
@@ -818,6 +787,7 @@ MDFMPreCreate (
     if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
+   
     
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
@@ -829,59 +799,171 @@ MDFMPostCreate(
     _In_opt_ PVOID CompletionContext,
     _In_ FLT_POST_OPERATION_FLAGS Flags
 )
-{
+{ 
     UNREFERENCED_PARAMETER(CompletionContext);
     UNREFERENCED_PARAMETER(Flags);
 
-    DbgPrint("MDFMPostCreate: Entered\n");
+    //
+    // 如果打开失败了，直接退出
+    //
+    if (Data->IoStatus.Information == 0 && !NT_SUCCESS(Data->IoStatus.Status)) {
+        DbgPrint("MDFMPostCreate-> Create Failed, break\n");
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
 
-    NTSTATUS status = STATUS_SUCCESS;
     
     PVOLUME_CONTEXT volCtx = NULL;
     PFLT_INSTANCE Instance = NULL;
     ULONG fileSize;
 
+    NTSTATUS status = STATUS_SUCCESS;
+    PFILE_FLAG pFlag = NULL;
+
+    PSTREAM_CONTEXT streamContext = NULL;
+    BOOLEAN bnewCreate = FALSE;
+
+    BOOLEAN isTargetProcess = MdfmCheckCurProcprivilege(Data);
+    if (!isTargetProcess) {
+        Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+        Data->IoStatus.Information = 0;
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    DbgPrint("MDFMPostCreate: Entered\n");
 
     try {
+        //
+        // 获取卷上下文，需要用到扇区大小
+        //
 
-        /*
-        *   获取文件大小
-        */
+        status = FltGetVolumeContext(FltObjects->Filter, FltObjects->Volume, &volCtx);
+
+        if (!NT_SUCCESS(status)) {
+
+            DbgPrint("[MDFMPostCreate]->FltGetVolumeFromInstance failed. Status = %x\n", status);
+            leave;
+        }
+
+        //
+        // 获取文件大小
+        //
 
         Instance = FltObjects->Instance;
 
         fileSize = MdfmGetFileSize(Instance, FltObjects->FileObject);
+        //DbgPrint("Create:-----------------------------%ld\n", fileSize);
+        //
+        // 文件太小不会包含文件标识
+        //
 
-        DbgPrint("FileSize is %ld\n", fileSize);
+        if (fileSize <  ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize)) {
+            // 没有文件标识，需要插入标识
+            pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
 
-        PFILE_FLAG pFlag = ExAllocatePoolWithTag( NonPagedPool, FLAG_SIZE, FLAG_TAG);
-        RtlZeroMemory(pFlag, FLAG_SIZE);
-        memcpy(pFlag->FileFlagHeader, &gFileFlagHeader, 16);
-        for (UCHAR i = 0; i < (UCHAR)128; i++) {
-            pFlag->FileKey[i] = i;
+            status = MdfmInitNewFlag(FltObjects, pFlag);
+
+            if (!NT_SUCCESS(status)) {
+                DbgPrint("MDFMPostCreate->Init Flag Failed\n");
+            }
+
+            MdfmWriteFileFlag(&Data, FltObjects, pFlag);
+
         }
-        pFlag->FileValidLength = fileSize;
+        else {
+            // 可能有文件标识，需要检查
+            pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
 
+            MdfmReadFileFlag(FltObjects, pFlag);
+            
+            // 检查GUID
+            if (strncmp(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH) != 0) {
+                // 不是文件标识，需要插入标识
 
-        MdfmWriteFileFlag(&Data, FltObjects, pFlag);
+                status = MdfmInitNewFlag(FltObjects, pFlag);
 
-        MdfmReadFileFlag(FltObjects, pFlag);
-        if (pFlag != NULL && strncmp(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH) == 0) {
-            DbgPrint("ValidLength: %ld\n", pFlag->FileValidLength);
+                if (!NT_SUCCESS(status)) {
+                    DbgPrint("MDFMPostCreate->Init Flag Failed\n");
+                }
+
+                MdfmWriteFileFlag(&Data, FltObjects, pFlag);
+            }
         }
 
-        ExFreePool(pFlag);
 
-        fileSize = MdfmGetFileSize(Instance, FltObjects->FileObject);
+        //
+        // 我们已经获取或新建了文件标识，接下来需要获取文件流上下文
+        //
+        
+        streamContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(STREAM_CONTEXT), CONTEXT_TAG);
 
-        DbgPrint("FileSize is %ld\n", fileSize);
+        status = MdfmFindOrCreateStreamContext(Data, FltObjects, TRUE, &streamContext, &bnewCreate);
 
+        if (!NT_SUCCESS(status)) {
+            DbgPrint("MDFMPostCreate->MdfmFindOrCreateStreamContext failed\n");
+            leave;
+        }
+
+        //
+        // 根据文件是否是第一次获取文件流上下文，判断文件是否是第一次打开，更新信息
+        //
+
+        if (bnewCreate) {
+            // 是第一次获取
+
+            ExEnterCriticalRegionAndAcquireResourceExclusive(streamContext->Resource);
+
+            // 填写名称
+
+            streamContext->FileName.Buffer = ExAllocatePoolWithTag(NonPagedPool, 0x100, NAME_TAG);
+            streamContext->FileName.MaximumLength = 0x100;
+            RtlCopyUnicodeString(&streamContext->FileName, &volCtx->DosName);
+            RtlUnicodeStringCbCatN(&streamContext->FileName, &FltObjects->FileObject->FileName, FltObjects->FileObject->FileName.Length);
+
+            // 填写大小
+
+            if (pFlag == NULL) {
+                streamContext->IsFlagExist = FALSE;
+            }
+            else {
+                streamContext->IsFlagExist = TRUE;
+                streamContext->FileValidSize = pFlag->FileValidLength;
+            }
+
+            // 填写密钥
+            memcpy(streamContext->FileKey, pFlag->FileKey, KEYSIZE);
+
+            ExReleaseResourceAndLeaveCriticalRegion(streamContext->Resource);
+
+        }
+        else {
+              // 填写大小
+              streamContext->FileValidSize = pFlag->FileValidLength;
+              // 填写密钥
+              memcpy(streamContext->FileKey, pFlag->FileKey, KEYSIZE);
+        }
+
+        DbgPrint("MDFMPostCreate->   fileSize:%ld\n", pFlag->FileValidLength);
 
     }
     finally {
-        
-    } 
 
+        //
+        // 释放资源
+        //
+
+        if (volCtx != NULL) {
+            FltReleaseContext(volCtx);
+        }
+        
+        if (streamContext != NULL) {
+            FltReleaseContext(streamContext);
+        }
+
+        if (pFlag != NULL) {
+            ExFreePool(pFlag);
+        }
+        
+    }
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
@@ -916,12 +998,6 @@ MDFMPreRead(
     }
 
     DbgPrint("MDFMPreRead: Entered\n");
-
-    // Get Flag
-
-    PFILE_FLAG pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
-
-    MdfmReadFileFlag(FltObjects, pFlag);
 
     // PreRead
 
@@ -975,7 +1051,6 @@ MDFMPreWrite(
     RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
 
     if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
-        DbgPrint("%wZ\n", FltObjects->FileObject->FileName);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
@@ -1017,10 +1092,6 @@ MDFMPostWrite(
 }
 
 
-
-
-
-
 FLT_PREOP_CALLBACK_STATUS
 MDFMPreCleanUp(
     _Inout_ PFLT_CALLBACK_DATA Data,
@@ -1028,6 +1099,17 @@ MDFMPreCleanUp(
     _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
 ) 
 {
+    NTSTATUS status = STATUS_SUCCESS;
+
+    BOOLEAN bnewCreate = FALSE;
+    PFILE_FLAG pFlag = NULL;
+    PVOLUME_CONTEXT volCtx = NULL;
+    PSTREAM_CONTEXT streamContext = NULL;
+
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
     //check
 
     if (!MdfmCheckCurProcprivilege(Data)) {
@@ -1039,15 +1121,94 @@ MDFMPreCleanUp(
     RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
 
     if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
-        DbgPrint("%wZ\n", FltObjects->FileObject->FileName);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    DbgPrint("MDFMPreCleanUp:Entered\n");
+    DbgPrint("MDFMPreCleanUp: Entered\n");
+
+
+    //
+    // 清除缓存
+    //
 
     MdfmFileCacheClear(FltObjects->FileObject);
 
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+
+    //
+    // 更新Flag
+    //
+
+    //
+    //	从卷上下文里面找到扇区大小
+    //
+
+    status = FltGetVolumeContext(FltObjects->Filter, FltObjects->Volume, &volCtx);
+
+    if (!NT_SUCCESS(status)) {
+
+        DbgPrint("[MDFMPreCleanUp]->FltGetVolumeFromInstance failed. Status = %x\n", status);
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    // 
+    // 获取文件流上下文
+    //
+
+    status = FltGetStreamContext(FltObjects->Instance, FltObjects->FileObject, &streamContext);
+    if (!NT_SUCCESS(status)) {
+
+        DbgPrint("[MDFMPreCleanUp]->FltGetStreamContext failed. Status = %x\n", status);
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    //
+    // 更新Flag中的文件长度
+    //
+
+    pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
+
+    // 清空内存
+    RtlZeroMemory(pFlag, FLAG_SIZE);
+
+    // 填写GUID
+    memcpy(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH);
+    // 填写密钥
+    memcpy(pFlag->FileKey, streamContext->FileKey, KEYSIZE);
+
+    //// 更新Flag中的文件长度
+    //pFlag = ExAllocatePoolWithTag(NonPagedPool, FLAG_SIZE, FLAG_TAG);
+    //MdfmReadFileFlag(FltObjects, pFlag);
+    ULONG Length = MdfmGetFileSize(FltObjects->Instance,FltObjects->FileObject);
+   
+    if (Length > ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize) && strncmp(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH) == 0) {
+        // 填写文件大小
+        pFlag->FileValidLength = MdfmGetFileSize(FltObjects->Instance, FltObjects->FileObject) - ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
+
+        DbgPrint("FileValidSize = %ld\n", pFlag->FileValidLength);
+
+        MdfmWriteFileFlag(&Data, FltObjects, pFlag);
+    }
+
+
+
+    //
+    // 清理工作
+    //
+
+    if (volCtx != NULL) {
+        FltReleaseContext(volCtx);
+    }
+
+    if (streamContext != NULL) {
+        FltReleaseContext(streamContext);
+    }
+
+    if (pFlag != NULL) {
+        ExFreePool(pFlag);
+    }
+
+
+    return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 FLT_POSTOP_CALLBACK_STATUS
@@ -1063,58 +1224,351 @@ MDFMPostCleanUp(
     UNREFERENCED_PARAMETER(CompletionContext);
     UNREFERENCED_PARAMETER(Flags);
 
-    PAGED_CODE();
 
     DbgPrint("MDFMPostCleanUp: Entered\n");
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
-//FLT_PREOP_CALLBACK_STATUS
-//MDFMPreClose(
-//    _Inout_ PFLT_CALLBACK_DATA Data,
-//    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-//    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
-//)
-//{
-//
-//    //check
-//
-//    if (!MdfmCheckCurProcprivilege(Data)) {
-//        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-//    }
-//
-//    UNICODE_STRING TXT = { 0 };
-//
-//    RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
-//
-//    if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
-//        DbgPrint("%wZ\n", FltObjects->FileObject->FileName);
-//        return FLT_PREOP_SUCCESS_NO_CALLBACK;
-//    }
-//
-//    DbgPrint("MDFMPreClose:Entered\n");
-//
-//    //MdfmFileCacheClear(FltObjects->FileObject);
-//
-//    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
-//}
-//
-//FLT_POSTOP_CALLBACK_STATUS
-//MDFMPostClose(
-//    _Inout_ PFLT_CALLBACK_DATA Data,
-//    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-//    _In_opt_ PVOID CompletionContext,
-//    _In_ FLT_POST_OPERATION_FLAGS Flags
-//) {
-//    UNREFERENCED_PARAMETER(Data);
-//    UNREFERENCED_PARAMETER(FltObjects);
-//    UNREFERENCED_PARAMETER(CompletionContext);
-//    UNREFERENCED_PARAMETER(Flags);
-//
-//    PAGED_CODE();
-//
-//    DbgPrint("MDFMPostClose: Entered\n");
-//
-//    return FLT_POSTOP_FINISHED_PROCESSING;
-//}
+FLT_PREOP_CALLBACK_STATUS
+MDFMPreClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+)
+{
+
+
+    //check
+
+    if (!MdfmCheckCurProcprivilege(Data)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    UNICODE_STRING TXT = { 0 };
+
+    RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
+
+    if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    DbgPrint("MDFMPreClose:Entered\n");
+
+    
+
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+MDFMPostClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+) {
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    PAGED_CODE();
+
+    DbgPrint("MDFMPostClose: Entered\n");
+
+    
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+MDFMPreQueryInformation(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+)
+{
+    //check
+
+    if (!MdfmCheckCurProcprivilege(Data)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    UNICODE_STRING TXT = { 0 };
+
+    RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
+
+    if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    DbgPrint("MdfmPreQueryInformation:Entered\n");
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+MDFMPostQueryInformation(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+) {
+    NTSTATUS status = STATUS_SUCCESS;
+    PSTREAM_CONTEXT streamContext = NULL;
+    BOOLEAN bnewCreate = FALSE;;
+    PVOLUME_CONTEXT volCtx = NULL;
+
+
+    //
+    // 获取卷上下文，需要用到扇区大小
+    //
+
+    status = FltGetVolumeContext(FltObjects->Filter, FltObjects->Volume, &volCtx);
+
+    if (!NT_SUCCESS(status)) {
+
+        DbgPrint("MdfmPostQueryInformation->FltGetVolumeContext failed\n");
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+
+
+    //
+    // 获取文件流上下文
+    //
+
+    streamContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(STREAM_CONTEXT), CONTEXT_TAG);
+
+    status = MdfmFindOrCreateStreamContext(Data, FltObjects, TRUE, &streamContext, &bnewCreate);
+
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("MdfmPostQueryInformation->MdfmFindOrCreateStreamContext failed\n");
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    //
+    // 检查是否有文件标识
+    //
+    if (!streamContext->IsFlagExist)
+    {
+        // 文件标识不存在，无需处理
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    // 
+    // 存在标识，需要调整文件大小
+    //
+
+    ULONG FileOffset = 0;
+    ULONG FlagSize = ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
+    PVOID InfoBuffer = Data->Iopb->Parameters.QueryFileInformation.InfoBuffer;
+
+    switch (Data->Iopb->Parameters.QueryFileInformation.FileInformationClass) {
+
+    case FileStandardInformation:
+    {
+        PFILE_STANDARD_INFORMATION Info = (PFILE_STANDARD_INFORMATION)InfoBuffer;
+        DbgPrint("MdfmPostQueryInformation->origin AllocationSize = %d EndOfFile = %d.\n", Info->AllocationSize.QuadPart, Info->EndOfFile.QuadPart);
+        Info->EndOfFile.QuadPart = Info->EndOfFile.QuadPart - FlagSize - FileOffset;
+        Info->AllocationSize.QuadPart = Info->AllocationSize.QuadPart - FlagSize;
+        DbgPrint("MdfmPostQueryInformation->AllocationSize = %d EndOfFile = %d.\n", Info->AllocationSize.QuadPart, Info->EndOfFile.QuadPart);
+        break;
+    }
+    case FileAllInformation:
+    {
+        PFILE_ALL_INFORMATION Info = (PFILE_ALL_INFORMATION)InfoBuffer;
+        if (Data->IoStatus.Information >=
+            sizeof(FILE_BASIC_INFORMATION) +
+            sizeof(FILE_STANDARD_INFORMATION))
+        {
+            if (Info->StandardInformation.AllocationSize.QuadPart > FlagSize)
+            {
+                Info->StandardInformation.AllocationSize.QuadPart -= FlagSize;
+            }
+
+            Info->StandardInformation.EndOfFile.QuadPart = Info->StandardInformation.EndOfFile.QuadPart - FlagSize - FileOffset;
+
+        }
+        break;
+    }
+    case FileAllocationInformation:
+    {
+        PFILE_ALLOCATION_INFORMATION Info = (PFILE_ALLOCATION_INFORMATION)InfoBuffer;
+        Info->AllocationSize.QuadPart = Info->AllocationSize.QuadPart - FlagSize;
+        DbgPrint("MdfmPostQueryInformation->FileAllocationInformation AllocationSize = %d.\n", Info->AllocationSize.QuadPart);
+        break;
+    }
+    case FileEndOfFileInformation:
+    {
+        PFILE_END_OF_FILE_INFORMATION Info = (PFILE_END_OF_FILE_INFORMATION)InfoBuffer;
+        Info->EndOfFile.QuadPart = Info->EndOfFile.QuadPart - FlagSize - FileOffset;
+        DbgPrint("MdfmPostQueryInformation->FileEndOfFileInformation EndOfFile = %d.\n", Info->EndOfFile.QuadPart);
+        break;
+    }
+    default:
+    {
+        break;
+    }
+    }
+
+    FltSetCallbackDataDirty(Data);
+
+    //
+    // 清理工作
+    //
+
+    if (NULL != streamContext)
+    {
+        FltReleaseContext(streamContext);
+        streamContext = NULL;
+    }
+
+    if (NULL != volCtx) {
+        FltReleaseContext(volCtx);
+    }
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+MDFMPreSetInformation(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+) 
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    PSTREAM_CONTEXT streamContext = NULL;
+    NTSTATUS status;
+    BOOLEAN bnewCreate = FALSE;
+    PVOLUME_CONTEXT volCtx = NULL;
+    
+
+    //check
+
+    if (!MdfmCheckCurProcprivilege(Data)) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    UNICODE_STRING TXT = { 0 };
+
+    RtlInitUnicodeString(&TXT, L"\\Users\\xxx\\Desktop\\test.txt");
+
+    if (RtlCompareUnicodeString(&TXT, &FltObjects->FileObject->FileName, TRUE) != 0) {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    DbgPrint("MDFMPreSetInformation:Entered\n");
+
+    //
+    // 获取卷上下文，需要用到扇区大小
+    //
+
+    status = FltGetVolumeContext(FltObjects->Filter, FltObjects->Volume, &volCtx);
+
+    if (!NT_SUCCESS(status)) {
+
+        DbgPrint("MDFMPreSetInformation->FltGetVolumeContext failed\n");
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    ULONG FlagSize = ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
+
+    //
+    // 获取文件流上下文
+    //
+
+    streamContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(STREAM_CONTEXT), CONTEXT_TAG);
+
+    status = MdfmFindOrCreateStreamContext(Data, FltObjects, TRUE, &streamContext, &bnewCreate);
+
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("MDFMPreSetInformation->MdfmFindOrCreateStreamContext failed\n");
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+
+    //
+    // 修改设置
+    //
+
+    ExEnterCriticalRegionAndAcquireResourceExclusive(streamContext->Resource);
+
+
+    PVOID InfoBuffer = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
+
+    switch (Data->Iopb->Parameters.QueryFileInformation.FileInformationClass)
+    {
+
+    case FileEndOfFileInformation:
+    {
+        PFILE_END_OF_FILE_INFORMATION Info = (PFILE_END_OF_FILE_INFORMATION)InfoBuffer;
+
+        streamContext->FileValidSize = Info->EndOfFile.QuadPart - FlagSize;
+
+        DbgPrint("MDFMPreSetInformation->FileEndOfFileInformation EndOfFile = %d.\n", Info->EndOfFile.QuadPart);
+
+        break;
+    }
+    case FileAllocationInformation:
+    {
+        PFILE_ALLOCATION_INFORMATION Info = (PFILE_ALLOCATION_INFORMATION)InfoBuffer;
+
+        DbgPrint("MDFMPreSetInformation->FileAllocationInformation Alloc = %d.\n", Info->AllocationSize.QuadPart);
+        break;
+    }
+    case FileStandardInformation:
+    {
+        PFILE_STANDARD_INFORMATION Info = (PFILE_STANDARD_INFORMATION)InfoBuffer;
+
+        streamContext->FileValidSize = Info->EndOfFile.QuadPart - FlagSize;
+
+        DbgPrint("MDFMPreSetInformation->FileStandardInformation EndOfFile = %d.\n", Info->EndOfFile.QuadPart);
+        DbgPrint("MDFMPreSetInformation->FileStandardInformation Alloc = %d.\n", Info->AllocationSize.QuadPart);
+        break;
+    }
+
+    }
+
+    ExReleaseResourceAndLeaveCriticalRegion(streamContext->Resource);
+
+    //
+    // 清理工作
+    //
+
+    if (NULL != streamContext)
+    {
+        FltReleaseContext(streamContext);
+        streamContext = NULL;
+    }
+
+    if (NULL != volCtx) {
+        FltReleaseContext(volCtx);
+    }
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+MDFMPostSetInformation(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    PAGED_CODE();
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}

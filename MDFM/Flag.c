@@ -1,6 +1,8 @@
 #include "Flag.h"
 #include "Context.h"
+#include "File.h"
 
+extern UCHAR gFileFlagHeader[FILE_GUID_LENGTH];
 
 NTSTATUS
 MdfmWriteFileFlag(
@@ -9,10 +11,11 @@ MdfmWriteFileFlag(
 	IN OUT PFILE_FLAG pFlag
 ) 
 {
+
 	NTSTATUS status = STATUS_SUCCESS;
 
 	FILE_STANDARD_INFORMATION StandardInfo = { 0 };
-	ULONG Length, LengthReturned;
+	ULONG Length;
 
 	PVOLUME_CONTEXT Volume;
 	FLT_VOLUME_PROPERTIES VolumeProps;
@@ -22,17 +25,6 @@ MdfmWriteFileFlag(
 	KEVENT Event;
 	LARGE_INTEGER ByteOffset;
 
-	//
-	//	查询文件大小
-	//
-
-	status = FltQueryInformationFile(FltObjects->Instance, FltObjects->FileObject, &StandardInfo, sizeof(FILE_STANDARD_INFORMATION), FileStandardInformation, &LengthReturned);
-
-	if (!NT_SUCCESS(status) || status == STATUS_VOLUME_DISMOUNTED)
-	{
-		DbgPrint("[MdfmWriteFileFlag]->FltQueryInformationFile failed. Status = %x\n", status);
-		return status;
-	}
 
 	//
 	//	从卷上下文里面找到扇区大小
@@ -88,7 +80,7 @@ MdfmWriteFileFlag(
 
 	ByteOffset.QuadPart = 0;
 	status = FltWriteFile(FltObjects->Instance, FltObjects->FileObject, &ByteOffset, Length, Buffer,
-		FLTFL_IO_OPERATION_NON_CACHED | FLTFL_IO_OPERATION_DO_NOT_UPDATE_BYTE_OFFSET, NULL, MdfmReadWriteCallbackRoutine, &Event);
+		FLTFL_IO_OPERATION_NON_CACHED | FLTFL_IO_OPERATION_DO_NOT_UPDATE_BYTE_OFFSET , NULL, MdfmReadWriteCallbackRoutine, &Event);
 
 	KeWaitForSingleObject(&Event, Executive, KernelMode, TRUE, 0);
 
@@ -251,5 +243,30 @@ MdfmReadWriteCallbackRoutine(
 {
 	UNREFERENCED_PARAMETER(CallbackData);
 	KeSetEvent((PRKEVENT)Context, IO_NO_INCREMENT, FALSE);
+}
+
+NTSTATUS
+MdfmInitNewFlag(
+	IN PCFLT_RELATED_OBJECTS FltObjects,
+	IN OUT PFILE_FLAG pFlag
+) 
+{
+	ULONG fileSize = MdfmGetFileSize(FltObjects->Instance, FltObjects->FileObject);
+
+	// 清空内存
+	RtlZeroMemory(pFlag, FLAG_SIZE);
+
+	// 填写GUID
+	memcpy(pFlag->FileFlagHeader, gFileFlagHeader, FILE_GUID_LENGTH);
+
+	// 填写密钥
+	for (UCHAR i = 0; i < (UCHAR)128; i++) {
+		pFlag->FileKey[i] = i;
+	}
+
+	// 填写文件大小
+	pFlag->FileValidLength = fileSize;
+
+	return STATUS_SUCCESS;
 }
 

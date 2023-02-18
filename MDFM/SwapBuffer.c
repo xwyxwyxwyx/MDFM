@@ -1,4 +1,3 @@
-#include "global.h"
 #include "Context.h"
 #include "Encrypt.h"
 #include "Flag.h"
@@ -15,6 +14,7 @@ PreWriteSwapBuffers(
     OUT PVOID* CompletionContext
 )
 {
+    
     PFLT_IO_PARAMETER_BLOCK iopb = (*Data)->Iopb;
     FLT_PREOP_CALLBACK_STATUS retValue = FLT_PREOP_SUCCESS_NO_CALLBACK;
     PVOID newBuf = NULL;
@@ -190,7 +190,7 @@ PreWriteSwapBuffers(
         //  替换缓冲区之前，数据加密
         //
 
-        MdfmAesEncrypt(newBuf, writeLen);
+        //MdfmAesEncrypt(newBuf, writeLen);
 
         //
         //  设置新的缓冲区
@@ -198,7 +198,7 @@ PreWriteSwapBuffers(
 
         iopb->Parameters.Write.WriteBuffer = newBuf;
         iopb->Parameters.Write.MdlAddress = newMdl;
-        iopb->Parameters.Write.ByteOffset.QuadPart += ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
+        //iopb->Parameters.Write.ByteOffset.QuadPart += ROUND_TO_SIZE(FLAG_SIZE, volCtx->SectorSize);
         FltSetCallbackDataDirty((*Data));
 
         //
@@ -590,7 +590,7 @@ PostReadSwapBuffers(
             //  替换缓冲区之后，数据解密
             //
             
-            MdfmAesDecrypt(origBuf, iopb->Parameters.Read.Length);
+            //MdfmAesDecrypt(origBuf, iopb->Parameters.Read.Length);
 
         } except(EXCEPTION_EXECUTE_HANDLER) {
 

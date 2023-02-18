@@ -5,6 +5,7 @@
 #define CONTEXT_H
 
 #define MIN_SECTOR_SIZE 0x200
+#define KEYSIZE 128
 
 #define BUFFER_SWAP_TAG     'bdBS'
 #define CONTEXT_TAG         'xcBS'
@@ -48,6 +49,41 @@ typedef struct _PRE_2_POST_CONTEXT {
 
 
 }PRE_2_POST_CONTEXT, * PPRE_2_POST_CONTEXT;
+
+
+// 文件流上下文
+typedef struct _STREAM_CONTEXT {
+	
+	//
+	// 标记文件是否存在文件标识
+	//
+
+	BOOLEAN IsFlagExist;
+
+	//
+	// 文件的有效大小
+	//
+
+	LONGLONG FileValidSize;
+
+	//
+	// 文件名，包含Dos名
+	//
+
+	UNICODE_STRING FileName;
+
+	//
+	//密钥
+	//
+
+	UCHAR    FileKey[KEYSIZE];
+	
+	//
+	// 资源锁
+	//
+
+	PERESOURCE Resource;
+}STREAM_CONTEXT, * PSTREAM_CONTEXT;
 #endif 
 
 
